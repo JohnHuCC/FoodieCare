@@ -13,5 +13,20 @@ Collaborative filtering, on the other hand, makes recommendations based on the k
 
 2. Item-based Collaborative Filtering: Instead of finding user's look-alike, it focuses on item similarity. If a user likes item X, then the system recommends items that other users who liked X also liked.
 
+
 ![image](foodiecare_ppt/recommend_spec_2.png)
 Both content-based and collaborative filtering recommendation models have their strengths and weaknesses. Content-based systems are limited by the need to have detailed information on the items and can only recommend items similar to those already rated by the user, potentially limiting the diversity of recommendations. Collaborative filtering can offer more serendipitous recommendations but might suffer from the cold start problem, where new items or users with limited history have few to no recommendations. Combining both approaches, often referred to as hybrid recommendation systems, can mitigate the weaknesses of each and provide more robust, personalized recommendations.
+
+## System Architecture
+![image](foodiecare_ppt/recom_arch.png)
+
+### Web Crawler
+![image](foodiecare_ppt/web_crawler.png)
+
+### Dataflow
+![image](foodiecare_ppt/dataflow.png)
+
+## Result
+![image](foodiecare_ppt/recom_result_1.png)
+
+![image](foodiecare_ppt/recom_result_2.png)
