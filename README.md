@@ -29,4 +29,4 @@ Both content-based and collaborative filtering recommendation models have their 
 ## Result
 ![image](foodiecare_ppt/recom_result_1.png)
 
-![image](foodiecare_ppt/recom_result_2.png)
+![image](foodiecare_ppt/recomd_result_2.png)
