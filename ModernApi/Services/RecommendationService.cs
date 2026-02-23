@@ -58,6 +58,34 @@ public sealed class RecommendationService
             }
         }
 
+        var nearbyDistanceKm = ParseDistanceKm(request.Distance, _options.DefaultDistanceKm);
+        try
+        {
+            var nearbyTypes = await _repository.GetNearbyTypesAsync(
+                request.Latitude,
+                request.Longitude,
+                nearbyDistanceKm,
+                _options.DefaultCandidateCount + 2,
+                cancellationToken);
+
+            if (nearbyTypes.Count > 0)
+            {
+                var fallbackPrimary = nearbyTypes[0];
+                if (!nearbyTypes.Contains(primaryType, StringComparer.Ordinal))
+                {
+                    primaryType = fallbackPrimary;
+                }
+
+                var reordered = new List<string> { primaryType };
+                AppendDistinct(reordered, nearbyTypes, _options.DefaultCandidateCount);
+                AppendDistinct(reordered, candidates, _options.DefaultCandidateCount);
+                candidates = reordered;
+            }
+        }
+        catch (MySqlException)
+        {
+        }
+
         return new RecommendOptionsResponse
         {
             PrimaryType = primaryType,
@@ -106,5 +134,17 @@ public sealed class RecommendationService
                 break;
             }
         }
+    }
+
+    private static int ParseDistanceKm(string? value, int fallback)
+    {
+        return value switch
+        {
+            "1km_less" => 1,
+            "1to5km" => 5,
+            "5to10km" => 10,
+            "10km_more" => 20,
+            _ => fallback
+        };
     }
 }

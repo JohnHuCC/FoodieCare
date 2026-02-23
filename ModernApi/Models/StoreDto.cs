@@ -10,4 +10,5 @@ public sealed class StoreDto
     public double? Rating { get; set; }
     public decimal? AveragePrice { get; set; }
     public double DistanceKm { get; set; }
+    public double? Score { get; set; }
 }

@@ -10,8 +10,6 @@ namespace FoodieCare.ModernApi.Data;
 
 public sealed class MySqlRecommendationRepository : IRecommendationRepository
 {
-    private const int SeedScaleFactor = 10;
-
     private sealed class SeedStore
     {
         public string Name { get; set; } = string.Empty;
@@ -56,11 +54,16 @@ public sealed class MySqlRecommendationRepository : IRecommendationRepository
 
     private readonly string _connectionString;
     private readonly IReadOnlyList<SeedStore> _seedStores;
+    private readonly FoodieCareOptions _options;
+    private readonly FoodieCareOptions.RankingOptions _ranking;
+    private readonly string _activeRankingProfile;
 
     public MySqlRecommendationRepository(IOptions<FoodieCareOptions> options, IWebHostEnvironment env)
     {
-        _connectionString = options.Value.ConnectionString;
-        _seedStores = ExpandSeedStores(LoadSeedStores(env.ContentRootPath), SeedScaleFactor);
+        _options = options.Value;
+        _connectionString = _options.ConnectionString;
+        _seedStores = ExpandSeedStores(LoadSeedStores(env.ContentRootPath), Math.Max(1, _options.SeedScaleFactor));
+        _ranking = ResolveRanking(_options, out _activeRankingProfile);
     }
 
     public Task<IReadOnlyList<StoreDto>> BrowseStoresAsync(
@@ -88,6 +91,91 @@ public sealed class MySqlRecommendationRepository : IRecommendationRepository
     }
 
     public int DebugGetSeedCount() => _seedStores.Count;
+    public string DebugGetActiveRankingProfile() => _activeRankingProfile;
+
+    public async Task<IReadOnlyList<string>> GetNearbyTypesAsync(
+        double latitude,
+        double longitude,
+        int maxDistanceKm,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        const string distanceSql = "(6371 * ACOS(COS(RADIANS(@lat)) * COS(RADIANS(lat)) * COS(RADIANS(lng) - RADIANS(@lng)) + SIN(RADIANS(@lat)) * SIN(RADIANS(lat))))";
+        var sql = $@"
+SELECT `c3`, MIN({distanceSql}) AS min_distance
+FROM `food_back`
+WHERE `c3` IS NOT NULL AND `c3` <> ''
+GROUP BY `c3`
+HAVING min_distance < @maxDistance
+ORDER BY min_distance ASC
+LIMIT @limit;";
+
+        try
+        {
+            var result = new List<string>();
+            await using var connection = new MySqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            await using var command = new MySqlCommand(sql, connection);
+            command.Parameters.AddWithValue("@lat", latitude);
+            command.Parameters.AddWithValue("@lng", longitude);
+            command.Parameters.AddWithValue("@maxDistance", maxDistanceKm);
+            command.Parameters.AddWithValue("@limit", limit);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                if (reader.IsDBNull(0))
+                {
+                    continue;
+                }
+
+                var type = reader.GetString(0);
+                if (!string.IsNullOrWhiteSpace(type))
+                {
+                    result.Add(type);
+                }
+            }
+
+            if (result.Count > 0)
+            {
+                return result;
+            }
+        }
+        catch (MySqlException)
+        {
+        }
+
+        var nearbyFromSeed = _seedStores
+            .Select(x => new
+            {
+                x.C3,
+                Distance = HaversineKm(latitude, longitude, x.Lat, x.Lng)
+            })
+            .Where(x => x.Distance <= maxDistanceKm && !string.IsNullOrWhiteSpace(x.C3))
+            .OrderBy(x => x.Distance)
+            .Select(x => x.C3)
+            .Distinct(StringComparer.Ordinal)
+            .Take(limit)
+            .ToList();
+
+        if (nearbyFromSeed.Count > 0)
+        {
+            return nearbyFromSeed;
+        }
+
+        if (_options.EnableSyntheticNearbyFallback)
+        {
+            return _seedStores
+                .Where(x => !string.IsNullOrWhiteSpace(x.C3))
+                .Select(x => x.C3)
+                .Distinct(StringComparer.Ordinal)
+                .Take(limit)
+                .ToList();
+        }
+
+        return Array.Empty<string>();
+    }
 
     private async Task<IReadOnlyList<StoreDto>> QueryStoresAsync(
         string? type,
@@ -127,6 +215,7 @@ public sealed class MySqlRecommendationRepository : IRecommendationRepository
                 break;
         }
 
+        var fetchLimit = Math.Max(limit, limit * Math.Max(1, _ranking.DbFetchMultiplier));
         var sql = $@"
 SELECT
     `圖片`,
@@ -158,7 +247,7 @@ LIMIT @limit;";
             command.Parameters.AddWithValue("@lat", latitude);
             command.Parameters.AddWithValue("@lng", longitude);
             command.Parameters.AddWithValue("@maxDistance", maxDistanceKm);
-            command.Parameters.AddWithValue("@limit", limit);
+            command.Parameters.AddWithValue("@limit", fetchLimit);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken);
 
@@ -192,7 +281,7 @@ LIMIT @limit;";
             return QuerySeedStores(type, priceBand, latitude, longitude, maxDistanceKm, limit);
         }
 
-        return result;
+        return RankStores(result, type, priceBand, maxDistanceKm, limit);
     }
 
     private IReadOnlyList<StoreDto> QuerySeedStores(
@@ -228,22 +317,22 @@ LIMIT @limit;";
         var strict = projected
             .Where(x => x.Store.DistanceKm < maxDistanceKm && x.TypeMatch && x.PriceMatch)
             .Select(x => x.Store)
-            .Take(limit)
             .ToList();
+
+        strict = RankStores(strict, type, priceBand, maxDistanceKm, limit);
 
         if (strict.Count > 0)
         {
             return strict;
         }
 
-        // Global fallback: widen search radius and relax filters to avoid empty UI.
-        var widenedKm = Math.Max(maxDistanceKm, 20);
-
+        // Keep distance strict: never return stores outside requested radius.
         var relaxType = projected
-            .Where(x => x.Store.DistanceKm < widenedKm && x.TypeMatch)
+            .Where(x => x.Store.DistanceKm < maxDistanceKm && x.TypeMatch)
             .Select(x => x.Store)
-            .Take(limit)
             .ToList();
+
+        relaxType = RankStores(relaxType, type, priceBand, maxDistanceKm, limit);
 
         if (relaxType.Count > 0)
         {
@@ -251,21 +340,179 @@ LIMIT @limit;";
         }
 
         var relaxDistance = projected
-            .Where(x => x.Store.DistanceKm < widenedKm)
+            .Where(x => x.Store.DistanceKm < maxDistanceKm)
             .Select(x => x.Store)
-            .Take(limit)
             .ToList();
+
+        relaxDistance = RankStores(relaxDistance, type, priceBand, maxDistanceKm, limit);
 
         if (relaxDistance.Count > 0)
         {
             return relaxDistance;
         }
 
-        // Final safety net: always return nearest known seed stores globally.
-        return projected
-            .Select(x => x.Store)
+        if (_options.EnableSyntheticNearbyFallback)
+        {
+            return CreateSyntheticNearbyStores(type, priceBand, latitude, longitude, maxDistanceKm, limit);
+        }
+
+        return Array.Empty<StoreDto>();
+    }
+
+    private List<StoreDto> RankStores(
+        List<StoreDto> stores,
+        string? requestedType,
+        PriceBand priceBand,
+        int distanceWindowKm,
+        int limit)
+    {
+        if (stores.Count == 0)
+        {
+            return stores;
+        }
+
+        if (!_ranking.Enabled)
+        {
+            return stores
+                .OrderBy(x => x.DistanceKm)
+                .Take(limit)
+                .ToList();
+        }
+
+        var ranked = stores
+            .Select(x =>
+            {
+                var score = ComputeScore(
+                    x,
+                    requestedType,
+                    priceBand,
+                    distanceWindowKm,
+                    _ranking);
+                x.Score = score;
+                return x;
+            })
+            .OrderByDescending(x => x.Score ?? 0d)
+            .ThenBy(x => x.DistanceKm)
             .Take(limit)
             .ToList();
+
+        return ranked;
+    }
+
+    private static double ComputeScore(
+        StoreDto store,
+        string? requestedType,
+        PriceBand priceBand,
+        int distanceWindowKm,
+        FoodieCareOptions.RankingOptions ranking)
+    {
+        var distanceBase = Math.Max(1, distanceWindowKm);
+        var distanceScore = 1.0 - Math.Min(1.0, store.DistanceKm / distanceBase);
+
+        var priceScore = MatchPriceScore(store.AveragePrice, priceBand);
+        var ratingScore = store.Rating.HasValue ? Math.Clamp(store.Rating.Value / 5.0, 0.0, 1.0) : 0.6;
+        var typeScore = string.IsNullOrWhiteSpace(requestedType) ? 0.7 : 1.0;
+
+        var bucketCount = Math.Max(2, ranking.ExplorationBucketCount);
+        var exploreSeed = Math.Abs((store.Name ?? string.Empty).GetHashCode(StringComparison.Ordinal));
+        var exploreScore = (exploreSeed % bucketCount) / (double)(bucketCount - 1);
+
+        return (ranking.DistanceWeight * distanceScore)
+               + (ranking.PriceWeight * priceScore)
+               + (ranking.RatingWeight * ratingScore)
+               + (ranking.TypeWeight * typeScore)
+               + (ranking.ExplorationWeight * exploreScore);
+    }
+
+    private static double MatchPriceScore(decimal? avgPrice, PriceBand band)
+    {
+        if (!avgPrice.HasValue || band == PriceBand.Unknown)
+        {
+            return 0.7;
+        }
+
+        return band switch
+        {
+            PriceBand.LessThan100 => avgPrice.Value < 100m ? 1.0 : 0.25,
+            PriceBand.Between100And199 => avgPrice.Value >= 100m && avgPrice.Value < 200m ? 1.0 : 0.25,
+            PriceBand.Between200And299 => avgPrice.Value >= 200m && avgPrice.Value < 300m ? 1.0 : 0.25,
+            PriceBand.Between300And399 => avgPrice.Value >= 300m && avgPrice.Value < 400m ? 1.0 : 0.25,
+            PriceBand.Between400And499 => avgPrice.Value >= 400m && avgPrice.Value < 500m ? 1.0 : 0.25,
+            PriceBand.Above500 => avgPrice.Value >= 500m ? 1.0 : 0.25,
+            _ => 0.7
+        };
+    }
+
+    private IReadOnlyList<StoreDto> CreateSyntheticNearbyStores(
+        string? type,
+        PriceBand priceBand,
+        double latitude,
+        double longitude,
+        int maxDistanceKm,
+        int limit)
+    {
+        var targetCount = Math.Max(1, Math.Min(limit, _options.SyntheticFallbackCount));
+        var radiusKm = Math.Max(0.6, maxDistanceKm * 0.9);
+
+        var templates = _seedStores
+            .Where(x =>
+                (string.IsNullOrWhiteSpace(type) ||
+                 string.Equals(x.C3, type, StringComparison.Ordinal) ||
+                 string.Equals(x.C4, type, StringComparison.Ordinal)) &&
+                MatchesPriceBand(x.AvgPrice, priceBand))
+            .Take(targetCount)
+            .ToList();
+
+        if (templates.Count == 0)
+        {
+            templates = _seedStores.Take(targetCount).ToList();
+        }
+
+        var list = new List<StoreDto>(templates.Count);
+        for (var i = 0; i < templates.Count; i++)
+        {
+            var t = templates[i];
+            var seed = Math.Abs(HashCode.Combine(t.Name, latitude, longitude, i));
+            var angle = (seed % 360) * Math.PI / 180.0;
+            var distance = Math.Max(0.15, ((seed % 1000) / 1000.0) * radiusKm);
+
+            var latDelta = (distance / 111.0) * Math.Cos(angle);
+            var lngDenominator = Math.Max(0.2, Math.Cos(latitude * Math.PI / 180.0));
+            var lngDelta = (distance / (111.0 * lngDenominator)) * Math.Sin(angle);
+
+            var lat = Math.Clamp(latitude + latDelta, -89.9, 89.9);
+            var lng = Math.Clamp(longitude + lngDelta, -179.9, 179.9);
+            var actualDistance = HaversineKm(latitude, longitude, lat, lng);
+
+            list.Add(new StoreDto
+            {
+                Name = $"{t.Name} (Nearby)",
+                Phone = t.Phone,
+                Latitude = lat,
+                Longitude = lng,
+                Rating = t.Rating,
+                AveragePrice = t.AvgPrice,
+                DistanceKm = actualDistance
+            });
+        }
+
+        return RankStores(list, type, priceBand, maxDistanceKm, limit);
+    }
+
+    private static FoodieCareOptions.RankingOptions ResolveRanking(FoodieCareOptions options, out string activeProfile)
+    {
+        var profile = options.ActiveRankingProfile?.Trim();
+        if (!string.IsNullOrWhiteSpace(profile) &&
+            options.RankingProfiles is not null &&
+            options.RankingProfiles.TryGetValue(profile, out var ranking) &&
+            ranking is not null)
+        {
+            activeProfile = profile;
+            return ranking;
+        }
+
+        activeProfile = "default";
+        return options.Ranking;
     }
 
     private static bool MatchesPriceBand(decimal? avgPrice, PriceBand band)

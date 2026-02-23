@@ -1,0 +1,12 @@
+[
+  { "name": "Tokyo", "lat": 35.6762, "lng": 139.6503, "radius_km": 10 },
+  { "name": "London", "lat": 51.5074, "lng": -0.1278, "radius_km": 10 },
+  { "name": "Paris", "lat": 48.8566, "lng": 2.3522, "radius_km": 10 },
+  { "name": "New York", "lat": 40.7128, "lng": -74.0060, "radius_km": 12 },
+  { "name": "Seoul", "lat": 37.5665, "lng": 126.9780, "radius_km": 10 },
+  { "name": "Bangkok", "lat": 13.7563, "lng": 100.5018, "radius_km": 10 },
+  { "name": "Singapore", "lat": 1.3521, "lng": 103.8198, "radius_km": 10 },
+  { "name": "Taipei", "lat": 25.0330, "lng": 121.5654, "radius_km": 10 },
+  { "name": "Sydney", "lat": -33.8688, "lng": 151.2093, "radius_km": 10 },
+  { "name": "Los Angeles", "lat": 34.0522, "lng": -118.2437, "radius_km": 12 }
+]

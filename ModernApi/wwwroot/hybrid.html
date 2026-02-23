@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FoodieCare - Hybrid Places</title>
+  <link rel="stylesheet" href="/assets/app.css?v=20260223c" />
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <button class="secondary" id="back-main">Back Main</button>
+      <button class="secondary" id="logout">Logout</button>
+    </div>
+
+    <header class="hero">
+      <h1>Hybrid Places</h1>
+      <p class="sub">OSM + Google(optional), merged with de-dup and source credibility badges.</p>
+    </header>
+
+    <section class="card">
+      <div class="row">
+        <div>
+          <label>Keyword</label>
+          <input id="query" placeholder="e.g. sushi, coffee, ramen" />
+        </div>
+        <div>
+          <label>Radius</label>
+          <select id="radius">
+            <option value="1">1 km</option>
+            <option value="3">3 km</option>
+            <option value="5" selected>5 km</option>
+            <option value="10">10 km</option>
+            <option value="20">20 km</option>
+          </select>
+        </div>
+        <div>
+          <label>Limit</label>
+          <select id="limit">
+            <option value="20">20</option>
+            <option value="40" selected>40</option>
+            <option value="60">60</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="search">Search Hybrid Places</button>
+      </div>
+      <p id="msg" class="notice"></p>
+    </section>
+
+    <section class="card" id="results-card" style="display:none;">
+      <h2>Results</h2>
+      <div class="result-toolbar">
+        <p class="sub" id="summary">-</p>
+        <div class="view-toggle" role="tablist" aria-label="view mode">
+          <button id="view-list" class="secondary active">List</button>
+          <button id="view-swipe" class="secondary">Swipe</button>
+        </div>
+      </div>
+
+      <div id="results-skeleton" class="skeleton-wrap" style="display:none;">
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+      </div>
+
+      <div id="list-view">
+        <div id="results" class="store-list"></div>
+      </div>
+
+      <div id="swipe-view" style="display:none;">
+        <div id="swipe-stage" class="swipe-stage">
+          <article id="swipe-item" class="swipe-item" tabindex="0">
+            <div class="swipe-chip" id="swipe-chip">Ready</div>
+            <div class="swipe-name" id="swipe-name">-</div>
+            <div class="swipe-meta" id="swipe-meta">-</div>
+            <div class="swipe-meta" id="swipe-price">-</div>
+            <div class="swipe-meta" id="swipe-phone">-</div>
+          </article>
+        </div>
+        <div class="actions">
+          <button id="swipe-nope" class="secondary">← Prev</button>
+          <button id="swipe-like">Next →</button>
+        </div>
+        <p id="swipe-progress" class="notice"></p>
+      </div>
+    </section>
+  </div>
+
+  <script src="/assets/app.js?v=20260223c"></script>
+  <script>
+    const auth = FC.requireAuth('/index.html');
+    if (!auth) throw new Error('Unauthorized');
+
+    const fromQuery = FC.parseQuery();
+    const getLastLocationSafe = () => {
+      if (typeof FC.loadLastLocation === 'function') return FC.loadLastLocation();
+      try {
+        const raw = localStorage.getItem('foodie_last_location');
+        if (!raw) return null;
+        const obj = JSON.parse(raw);
+        if (!Number.isFinite(obj?.lat) || !Number.isFinite(obj?.lng)) return null;
+        return obj;
+      } catch {
+        return null;
+      }
+    };
+
+    const last = getLastLocationSafe();
+    const q = (Number.isFinite(fromQuery.lat) && Number.isFinite(fromQuery.lng))
+      ? fromQuery
+      : (last || { lat: NaN, lng: NaN });
+
+    if (!Number.isFinite(q.lat) || !Number.isFinite(q.lng)) {
+      alert('Please set location in Main first.');
+      location.href = '/main.html';
+    }
+
+    const state = {
+      stores: [],
+      swipeIndex: 0,
+      viewMode: 'list'
+    };
+
+    const msg = document.getElementById('msg');
+    const summary = document.getElementById('summary');
+    const resultsCard = document.getElementById('results-card');
+    const results = document.getElementById('results');
+    const skeleton = document.getElementById('results-skeleton');
+    const swipeProgress = document.getElementById('swipe-progress');
+
+    function inferQuality(source) {
+      if ((source || '').toLowerCase() === 'google') return 'Verified';
+      if ((source || '').toLowerCase() === 'osm') return 'Community';
+      return 'Seed';
+    }
+
+    function qualityClass(q) {
+      if (q === 'Verified') return 'quality verified';
+      if (q === 'Community') return 'quality community';
+      return 'quality seed';
+    }
+
+    function renderList() {
+      results.innerHTML = '';
+      state.stores.forEach((p) => {
+        const qy = inferQuality(p.source);
+        const el = document.createElement('article');
+        el.className = 'store';
+        el.innerHTML = `
+          <div class="store-head">
+            <div class="store-name">${p.name || ''}</div>
+            <div>${Number(p.distanceKm || 0).toFixed(2)} km</div>
+          </div>
+          <div class="meta-row">
+            <span class="source-pill">${(p.source || '-').toUpperCase()}</span>
+            <span class="${qualityClass(qy)}">${qy}</span>
+          </div>
+          <div class="meta">Address: ${p.address || '-'}</div>
+          <div class="meta">Phone: ${p.phone || '-'}</div>
+          <div class="meta">Rating: ${p.rating ?? '-'}</div>
+          <div class="meta">AvgPrice: ${p.averagePrice ?? '-'}</div>
+          <div class="actions">
+            <button class="open-map secondary">Open Map</button>
+          </div>
+        `;
+        el.querySelector('.open-map').addEventListener('click', () => {
+          const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${p.latitude},${p.longitude}`)}`;
+          window.open(url, '_blank');
+        });
+        results.appendChild(el);
+      });
+    }
+
+    function renderSwipe() {
+      const chip = document.getElementById('swipe-chip');
+      const name = document.getElementById('swipe-name');
+      const meta = document.getElementById('swipe-meta');
+      const price = document.getElementById('swipe-price');
+      const phone = document.getElementById('swipe-phone');
+
+      if (!state.stores.length) {
+        chip.textContent = '0/0';
+        name.textContent = 'No places loaded';
+        meta.textContent = 'Run search first.';
+        price.textContent = '';
+        phone.textContent = '';
+        FC.text(swipeProgress, '0/0', '');
+        return;
+      }
+
+      state.swipeIndex = Math.max(0, Math.min(state.swipeIndex, state.stores.length - 1));
+      const p = state.stores[state.swipeIndex];
+      const qy = inferQuality(p.source);
+      chip.textContent = `${state.swipeIndex + 1}/${state.stores.length} • ${(p.source || '-').toUpperCase()}/${qy}`;
+      name.textContent = p.name || '-';
+      meta.textContent = `${Number(p.distanceKm || 0).toFixed(2)} km | Rating: ${p.rating ?? '-'}`;
+      price.textContent = `AvgPrice: ${p.averagePrice ?? '-'} | Address: ${p.address || '-'}`;
+      phone.textContent = `Phone: ${p.phone || '-'}`;
+      FC.text(swipeProgress, `${state.swipeIndex + 1}/${state.stores.length}`, 'ok');
+    }
+
+    function setView(mode) {
+      state.viewMode = mode;
+      document.getElementById('list-view').style.display = mode === 'list' ? 'block' : 'none';
+      document.getElementById('swipe-view').style.display = mode === 'swipe' ? 'block' : 'none';
+      document.getElementById('view-list').classList.toggle('active', mode === 'list');
+      document.getElementById('view-swipe').classList.toggle('active', mode === 'swipe');
+      renderSwipe();
+    }
+
+    document.getElementById('search').addEventListener('click', async () => {
+      FC.text(msg, 'Searching hybrid places...', '');
+      skeleton.style.display = 'block';
+      resultsCard.style.display = 'block';
+      state.stores = [];
+      renderList();
+      renderSwipe();
+
+      try {
+        const data = await FC.postJson('/api/places/hybrid-search', {
+          query: document.getElementById('query').value.trim() || null,
+          latitude: q.lat,
+          longitude: q.lng,
+          radiusKm: Number(document.getElementById('radius').value),
+          limit: Number(document.getElementById('limit').value)
+        });
+
+        state.stores = Array.isArray(data) ? data : [];
+        state.swipeIndex = 0;
+        renderList();
+        renderSwipe();
+        summary.textContent = `Loaded ${state.stores.length} places around (${q.lat.toFixed(4)}, ${q.lng.toFixed(4)}).`;
+        if (!state.stores.length) {
+          FC.text(msg, 'No places found. Try bigger radius or another keyword.', 'error');
+        } else {
+          FC.text(msg, `Loaded ${state.stores.length} places.`, 'ok');
+        }
+      } catch (e) {
+        FC.text(msg, e.message, 'error');
+      } finally {
+        skeleton.style.display = 'none';
+      }
+    });
+
+    document.getElementById('view-list').addEventListener('click', () => setView('list'));
+    document.getElementById('view-swipe').addEventListener('click', () => setView('swipe'));
+    document.getElementById('swipe-nope').addEventListener('click', () => { state.swipeIndex -= 1; renderSwipe(); });
+    document.getElementById('swipe-like').addEventListener('click', () => { state.swipeIndex += 1; renderSwipe(); });
+
+    document.getElementById('back-main').addEventListener('click', () => {
+      location.href = '/main.html';
+    });
+
+    document.getElementById('logout').addEventListener('click', () => {
+      FC.clearAuth();
+      location.href = '/index.html';
+    });
+
+    setView('list');
+  </script>
+</body>
+</html>

@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>FoodieCare - Main</title>
-  <link rel="stylesheet" href="/assets/app.css" />
+  <title>FoodieCare - V3 Flow</title>
+  <link rel="stylesheet" href="/assets/app.css?v=20260223c" />
 </head>
 <body>
   <div class="page">
@@ -14,17 +14,23 @@
     </div>
 
     <header class="hero">
-      <h1>Main Menu</h1>
-      <p class="sub">Get your location, then start recommendation flow.</p>
+      <h1>FoodieCare V3</h1>
+      <p class="sub">Single flow with live snapshot, adaptive feedback, and unified List / Swipe results.</p>
     </header>
 
     <section class="card">
+      <div class="stepper" id="stepper">
+        <div class="step active" data-step="1">1. Location</div>
+        <div class="step" data-step="2">2. Preferences</div>
+        <div class="step" data-step="3">3. Results</div>
+      </div>
+    </section>
+
+    <section class="card" id="step-location">
+      <h2>Location</h2>
       <div class="actions">
         <button id="locate">Use Current Location</button>
-        <button id="default-loc" class="secondary">Use KMU Default</button>
-        <button id="london-loc" class="secondary">Use Global Demo (London)</button>
-      </div>
-      <p id="loc-msg" class="notice"></p>
+              </div>
 
       <div class="row">
         <div>
@@ -52,7 +58,7 @@
 
       <div class="row">
         <div>
-          <label>Free Input City Name</label>
+          <label>Search City</label>
           <input id="city-input" placeholder="e.g. Barcelona, Seoul, Vancouver" />
         </div>
         <div class="actions" style="align-items:flex-end;">
@@ -71,160 +77,673 @@
         </div>
       </div>
 
+      <p id="loc-msg" class="notice"></p>
+    </section>
+
+    <section class="card" id="step-preferences">
+      <h2>Preferences</h2>
+      <div class="inline-tools">
+        <label class="switch-row">
+          <input id="auto-refresh" type="checkbox" checked />
+          <span>Auto refresh after preference change</span>
+        </label>
+        <button id="reset-preferences" class="secondary">Reset</button>
+      </div>
+      <div class="row">
+        <div>
+          <label>Taste</label>
+          <select id="taste">
+            <option value="salty">salty</option>
+            <option value="sweety">sweety</option>
+          </select>
+        </div>
+        <div>
+          <label>Price</label>
+          <select id="price">
+            <option value="100_less">100_less</option>
+            <option value="100_199">100_199</option>
+            <option value="200_299">200_299</option>
+            <option value="300_399">300_399</option>
+            <option value="400_499">400_499</option>
+            <option value="500_more">500_more</option>
+          </select>
+        </div>
+        <div>
+          <label>Eat Mode</label>
+          <select id="eatMode">
+            <option value="alone">alone</option>
+            <option value="friend">friend</option>
+            <option value="couple">couple</option>
+            <option value="family">family</option>
+          </select>
+        </div>
+        <div>
+          <label>Hunger</label>
+          <select id="hunger">
+            <option value="eat_much">eat_much</option>
+            <option value="eat_less">eat_less</option>
+          </select>
+        </div>
+        <div>
+          <label>Distance</label>
+          <select id="distance">
+            <option value="1km_less">1km_less</option>
+            <option value="1to5km" selected>1to5km</option>
+            <option value="5to10km">5to10km</option>
+            <option value="10km_more">10km_more</option>
+          </select>
+        </div>
+        <div>
+          <label>Hot/Cold</label>
+          <select id="hotCold">
+            <option value="hot">hot</option>
+            <option value="cold">cold</option>
+          </select>
+        </div>
+      </div>
       <div class="actions">
-        <button id="go-rec">Recommendation System</button>
-        <button id="go-browse" class="secondary">Browse Nearby Foods</button>
+        <button id="run">Run Recommendation</button>
+      </div>
+      <p id="run-msg" class="notice"></p>
+    </section>
+
+    <section class="card" id="step-results">
+      <h2>Results</h2>
+      <p class="sub" id="result-sub">Choose from candidate types, then view list or swipe with the same data.</p>
+      <div class="snapshot" id="snapshot">
+        <div class="snapshot-item">
+          <span>Location</span>
+          <strong id="snap-location">-</strong>
+        </div>
+        <div class="snapshot-item">
+          <span>Filters</span>
+          <strong id="snap-filters">-</strong>
+        </div>
+        <div class="snapshot-item">
+          <span>Loaded</span>
+          <strong id="snap-count">0 stores</strong>
+        </div>
+      </div>
+
+      <div class="result-toolbar">
+        <div id="options"></div>
+        <div class="view-toggle" role="tablist" aria-label="view mode">
+          <button id="view-list" class="secondary active">List</button>
+          <button id="view-swipe" class="secondary">Swipe</button>
+        </div>
+      </div>
+
+      <div id="candidate-grid" class="candidate-grid"></div>
+      <p id="options-msg" class="notice"></p>
+
+      <div id="results-skeleton" class="skeleton-wrap" style="display:none;">
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+        <div class="skeleton-card"></div>
+      </div>
+
+      <div id="list-view">
+        <div id="stores" class="store-list"></div>
+        <div class="pagination">
+          <button id="prev-page" class="secondary">Prev</button>
+          <button id="next-page" class="secondary">Next</button>
+          <span id="page-info" class="pill"></span>
+        </div>
+        <div class="map-panel">
+          <div class="map-header" id="map-header">Map Preview</div>
+          <iframe id="map-frame" class="map-frame" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+        </div>
+      </div>
+
+      <div id="swipe-view" style="display:none;">
+        <div id="swipe-stage" class="swipe-stage">
+          <article id="swipe-item" class="swipe-item" tabindex="0">
+            <div class="swipe-chip" id="swipe-chip">Ready</div>
+            <div class="swipe-name" id="swipe-name">-</div>
+            <div class="swipe-meta" id="swipe-meta">-</div>
+            <div class="swipe-meta" id="swipe-price">-</div>
+            <div class="swipe-meta" id="swipe-phone">-</div>
+          </article>
+        </div>
+        <div class="actions">
+          <button id="swipe-nope" class="secondary">← Skip</button>
+          <button id="swipe-like">Like →</button>
+        </div>
+        <p id="swipe-progress" class="notice"></p>
+      </div>
+
+      <p id="stores-msg" class="notice"></p>
+      <div id="empty-actions" class="actions" style="display:none;">
+        <button id="expand-distance" class="secondary">Try 5~10km</button>
+        <button id="change-city" class="secondary">Switch City</button>
+      </div>
+      <div class="actions" style="margin-top:16px;">
+        <button id="open-hybrid" class="secondary">Open Hybrid Explorer</button>
       </div>
     </section>
   </div>
 
-  <script src="/assets/app.js"></script>
+  <script src="/assets/app.js?v=20260223c"></script>
   <script>
     const auth = FC.requireAuth('/index.html');
     if (!auth) throw new Error('Unauthorized');
 
-    if (auth) {
-      document.getElementById('whoami').textContent = FC.isGuestAuth(auth)
-        ? 'Guest Mode'
-        : `${auth.username} (#${auth.userId})`;
-    }
+    document.getElementById('whoami').textContent = FC.isGuestAuth(auth)
+      ? 'Guest Mode'
+      : `${auth.username} (#${auth.userId})`;
+
+    const state = {
+      request: null,
+      response: null,
+      selectedType: null,
+      stores: [],
+      page: 1,
+      pageSize: 10,
+      swipeIndex: 0,
+      activeStep: 1,
+      hasRun: false,
+      refreshTimer: null,
+      viewMode: 'list'
+    };
+
+    const locMsg = document.getElementById('loc-msg');
+    const runMsg = document.getElementById('run-msg');
+    const optionsMsg = document.getElementById('options-msg');
+    const storesMsg = document.getElementById('stores-msg');
+    const swipeProgress = document.getElementById('swipe-progress');
+    const skeleton = document.getElementById('results-skeleton');
+    const runBtn = document.getElementById('run');
+    const emptyActions = document.getElementById('empty-actions');
+    const snapLocation = document.getElementById('snap-location');
+    const snapFilters = document.getElementById('snap-filters');
+    const snapCount = document.getElementById('snap-count');
 
     const latInput = document.getElementById('lat');
     const lngInput = document.getElementById('lng');
-    const msg = document.getElementById('loc-msg');
-    const saveLastLocation = (lat, lng) => {
+
+    const saveLastLocationSafe = (lat, lng) => {
       if (typeof FC.saveLastLocation === 'function') {
         FC.saveLastLocation(lat, lng);
-        return;
+      } else {
+        localStorage.setItem('foodie_last_location', JSON.stringify({ lat, lng }));
       }
-      localStorage.setItem('foodie_last_location', JSON.stringify({ lat, lng }));
     };
+
+    const loadLastLocationSafe = () => {
+      if (typeof FC.loadLastLocation === 'function') return FC.loadLastLocation();
+      try {
+        const raw = localStorage.getItem('foodie_last_location');
+        if (!raw) return null;
+        const obj = JSON.parse(raw);
+        if (!Number.isFinite(obj?.lat) || !Number.isFinite(obj?.lng)) return null;
+        return obj;
+      } catch {
+        return null;
+      }
+    };
+
+    function setStep(step) {
+      state.activeStep = step;
+      document.querySelectorAll('#stepper .step').forEach((el) => {
+        const n = Number(el.dataset.step);
+        el.classList.toggle('active', n === step);
+        el.classList.toggle('done', n < step);
+      });
+    }
+
+    function updateSnapshot() {
+      const lat = Number(latInput.value);
+      const lng = Number(lngInput.value);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        snapLocation.textContent = `${lat.toFixed(4)}, ${lng.toFixed(4)}`;
+      } else {
+        snapLocation.textContent = '-';
+      }
+
+      const taste = document.getElementById('taste').value;
+      const price = document.getElementById('price').value;
+      const distance = document.getElementById('distance').value;
+      snapFilters.textContent = `${taste} • ${price} • ${distance}`;
+      snapCount.textContent = `${state.stores.length} stores`;
+    }
 
     function setCoord(lat, lng, source) {
       latInput.value = String(lat);
       lngInput.value = String(lng);
-      saveLastLocation(lat, lng);
-      FC.text(msg, `Location set (${source})`, 'ok');
+      saveLastLocationSafe(lat, lng);
+      FC.text(locMsg, `Location set (${source})`, 'ok');
+      updateSnapshot();
     }
-
-    document.getElementById('locate').addEventListener('click', () => {
-      if (!navigator.geolocation) {
-        FC.text(msg, 'Geolocation not supported.', 'error');
-        return;
-      }
-
-      FC.text(msg, 'Locating...');
-      navigator.geolocation.getCurrentPosition(
-        (pos) => setCoord(pos.coords.latitude, pos.coords.longitude, 'browser'),
-        (err) => FC.text(msg, err.message || 'Failed to get location', 'error'),
-        { enableHighAccuracy: true, timeout: 10000 }
-      );
-    });
-
-    document.getElementById('default-loc').addEventListener('click', () => {
-      setCoord(22.647423, 120.309627, 'KMU default');
-    });
-
-    document.getElementById('london-loc').addEventListener('click', () => {
-      setCoord(51.5074, -0.1278, 'London default');
-    });
-
-    document.getElementById('apply-preset').addEventListener('click', () => {
-      const selected = document.getElementById('city-preset').value;
-      if (!selected) {
-        FC.text(msg, 'Please select a preset city first.', 'error');
-        return;
-      }
-
-      const [latRaw, lngRaw] = selected.split(',');
-      const lat = Number(latRaw);
-      const lng = Number(lngRaw);
-      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        FC.text(msg, 'Invalid preset coordinates.', 'error');
-        return;
-      }
-
-      const cityName = document.getElementById('city-preset').selectedOptions[0]?.textContent || 'preset';
-      setCoord(lat, lng, `preset: ${cityName}`);
-    });
-
-    document.getElementById('search-city').addEventListener('click', async () => {
-      const query = document.getElementById('city-input').value.trim();
-      if (!query) {
-        FC.text(msg, 'Please input a city name.', 'error');
-        return;
-      }
-
-      FC.text(msg, 'Searching city...');
-
-      try {
-        const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`;
-        const res = await fetch(url, { headers: { Accept: 'application/json' } });
-        if (!res.ok) {
-          throw new Error(`City search failed (HTTP ${res.status})`);
-        }
-
-        const data = await res.json();
-        if (!Array.isArray(data) || data.length === 0) {
-          FC.text(msg, `City not found: ${query}`, 'error');
-          return;
-        }
-
-        const lat = Number(data[0].lat);
-        const lng = Number(data[0].lon);
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-          FC.text(msg, 'Search result has invalid coordinates.', 'error');
-          return;
-        }
-
-        setCoord(lat, lng, `search: ${query}`);
-      } catch (e) {
-        FC.text(msg, e.message || 'Failed to search city.', 'error');
-      }
-    });
 
     function readManualCoordinates() {
       const lat = Number(latInput.value);
       const lng = Number(lngInput.value);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-        FC.text(msg, 'Please input valid latitude/longitude.', 'error');
+        FC.text(locMsg, 'Please input valid latitude/longitude.', 'error');
         return null;
       }
-
       if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-        FC.text(msg, 'Coordinates out of range.', 'error');
+        FC.text(locMsg, 'Coordinates out of range.', 'error');
         return null;
       }
-
       return { lat, lng };
     }
 
-    document.getElementById('go-rec').addEventListener('click', () => {
-      const coord = readManualCoordinates();
-      if (!coord) {
+    function collectRequest(coord) {
+      return {
+        userId: auth.userId,
+        price: document.getElementById('price').value,
+        eatMode: document.getElementById('eatMode').value,
+        hunger: document.getElementById('hunger').value,
+        distance: document.getElementById('distance').value,
+        hotCold: document.getElementById('hotCold').value,
+        taste: document.getElementById('taste').value,
+        latitude: coord.lat,
+        longitude: coord.lng
+      };
+    }
+
+    function mapUrlFor(lat, lng) {
+      return `https://www.google.com/maps?q=${encodeURIComponent(`${lat},${lng}`)}&z=15&output=embed`;
+    }
+
+    function inferSourceAndQuality(store) {
+      const name = String(store.name || '');
+      const rawSource = String(store.source || '').toLowerCase();
+
+      if (rawSource === 'google') return { source: 'Google', quality: 'Verified' };
+      if (rawSource === 'osm') return { source: 'OSM', quality: 'Community' };
+      if (name.includes('(Nearby)')) return { source: 'Seed', quality: 'Seed' };
+      if (store.phone || store.rating != null) return { source: 'Core', quality: 'Verified' };
+      return { source: 'Core', quality: 'Community' };
+    }
+
+    function qualityClass(q) {
+      if (q === 'Verified') return 'quality verified';
+      if (q === 'Community') return 'quality community';
+      return 'quality seed';
+    }
+
+    function renderOptions(data) {
+      const box = document.getElementById('options');
+      const grid = document.getElementById('candidate-grid');
+      box.innerHTML = '';
+      grid.innerHTML = '';
+
+      data.candidateTypes.forEach((t, i) => {
+        const pill = document.createElement('span');
+        pill.className = 'pill';
+        pill.textContent = i === 0 ? `${t} (primary)` : t;
+        box.appendChild(pill);
+      });
+
+      data.candidateTypes.forEach((t, i) => {
+        const card = document.createElement('article');
+        card.className = `candidate-card${i === 0 ? ' active' : ''}`;
+        card.innerHTML = `
+          <div class="candidate-name">${t}</div>
+          <div class="candidate-tag">${i === 0 ? 'Primary' : 'Candidate'}</div>
+        `;
+        card.addEventListener('click', async () => {
+          state.selectedType = t;
+          [...grid.querySelectorAll('.candidate-card')].forEach((x) => x.classList.remove('active'));
+          card.classList.add('active');
+          FC.text(optionsMsg, `Selected type: ${t}. Refreshing...`, 'ok');
+          await searchStoresWithFallback(t);
+        });
+        grid.appendChild(card);
+      });
+
+      state.selectedType = data.primaryType;
+      FC.text(optionsMsg, `Primary type: ${data.primaryType}`, 'ok');
+    }
+
+    function renderStoresPage() {
+      const list = document.getElementById('stores');
+      const pageInfo = document.getElementById('page-info');
+      const prevBtn = document.getElementById('prev-page');
+      const nextBtn = document.getElementById('next-page');
+      const mapHeader = document.getElementById('map-header');
+      const mapFrame = document.getElementById('map-frame');
+
+      list.innerHTML = '';
+      if (!state.stores || state.stores.length === 0) {
+        pageInfo.textContent = '0 / 0';
+        prevBtn.disabled = true;
+        nextBtn.disabled = true;
+        emptyActions.style.display = 'flex';
+        updateSnapshot();
         return;
       }
 
-      saveLastLocation(coord.lat, coord.lng);
-      const q = new URLSearchParams({ lat: String(coord.lat), lng: String(coord.lng) });
-      location.href = `/recommender.html?${q.toString()}`;
+      const totalPages = Math.max(1, Math.ceil(state.stores.length / state.pageSize));
+      state.page = Math.max(1, Math.min(state.page, totalPages));
+      const start = (state.page - 1) * state.pageSize;
+      const current = state.stores.slice(start, start + state.pageSize);
+
+      current.forEach((s, idx) => {
+        const meta = inferSourceAndQuality(s);
+        const card = document.createElement('article');
+        card.className = 'store';
+        card.innerHTML = `
+          <div class="store-head">
+            <div class="store-name">${s.name || ''}</div>
+            <div>${Number(s.distanceKm || 0).toFixed(2)} km</div>
+          </div>
+          <div class="meta-row">
+            <span class="source-pill">${meta.source}</span>
+            <span class="${qualityClass(meta.quality)}">${meta.quality}</span>
+            ${s.score != null ? `<span class="pill">score ${Number(s.score).toFixed(2)}</span>` : ''}
+          </div>
+          <div class="meta">Type: ${state.selectedType || '-'}</div>
+          <div class="meta">Phone: ${s.phone || '-'}</div>
+          <div class="meta">AvgPrice: ${s.averagePrice ?? '-'}</div>
+          <div class="actions">
+            <button class="preview-map secondary">Preview Map</button>
+            <button class="open-map secondary">Open Map</button>
+          </div>
+        `;
+
+        const pickMap = () => {
+          mapHeader.textContent = `Map Preview: ${s.name || 'Store'}`;
+          mapFrame.src = mapUrlFor(s.latitude, s.longitude);
+        };
+
+        if (idx === 0) pickMap();
+        card.querySelector('.preview-map').addEventListener('click', pickMap);
+        card.querySelector('.open-map').addEventListener('click', () => {
+          const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${s.latitude},${s.longitude}`)}`;
+          window.open(url, '_blank');
+        });
+
+        list.appendChild(card);
+      });
+
+      pageInfo.textContent = `${state.page} / ${totalPages}`;
+      prevBtn.disabled = state.page <= 1;
+      nextBtn.disabled = state.page >= totalPages;
+      emptyActions.style.display = 'none';
+      updateSnapshot();
+    }
+
+    function renderSwipeCard() {
+      const cardWrap = document.getElementById('swipe-view');
+      const chip = document.getElementById('swipe-chip');
+      const name = document.getElementById('swipe-name');
+      const meta = document.getElementById('swipe-meta');
+      const price = document.getElementById('swipe-price');
+      const phone = document.getElementById('swipe-phone');
+
+      if (!state.stores || state.stores.length === 0) {
+        cardWrap.style.display = state.viewMode === 'swipe' ? 'block' : 'none';
+        chip.textContent = 'Empty';
+        name.textContent = 'No stores loaded';
+        meta.textContent = 'Try: increase distance to 5~10km, or switch city.';
+        price.textContent = 'Tip: You can also click a candidate type above.';
+        phone.textContent = '';
+        FC.text(swipeProgress, '0/0', '');
+        return;
+      }
+
+      if (state.swipeIndex >= state.stores.length) {
+        chip.textContent = 'Finished';
+        name.textContent = 'No more stores';
+        meta.textContent = 'Switch to List view or run again with new preferences.';
+        price.textContent = '';
+        phone.textContent = '';
+        FC.text(swipeProgress, `${state.stores.length}/${state.stores.length}`, 'ok');
+        return;
+      }
+
+      const s = state.stores[state.swipeIndex];
+      const source = inferSourceAndQuality(s);
+      chip.textContent = `${state.swipeIndex + 1}/${state.stores.length} • ${source.source}/${source.quality}`;
+      name.textContent = s.name || '-';
+      meta.textContent = `${Number(s.distanceKm || 0).toFixed(2)} km | Type: ${state.selectedType || '-'}`;
+      price.textContent = `AvgPrice: ${s.averagePrice ?? '-'}${s.score != null ? ` | score ${Number(s.score).toFixed(2)}` : ''}`;
+      phone.textContent = `Phone: ${s.phone || '-'}`;
+      FC.text(swipeProgress, `${state.swipeIndex + 1}/${state.stores.length}`, 'ok');
+    }
+
+    function setViewMode(mode) {
+      state.viewMode = mode;
+      document.getElementById('list-view').style.display = mode === 'list' ? 'block' : 'none';
+      document.getElementById('swipe-view').style.display = mode === 'swipe' ? 'block' : 'none';
+      document.getElementById('view-list').classList.toggle('active', mode === 'list');
+      document.getElementById('view-swipe').classList.toggle('active', mode === 'swipe');
+      renderSwipeCard();
+    }
+
+    async function fetchStoresByType(type) {
+      return FC.postJson('/api/recommendation/stores', {
+        type,
+        price: state.request.price,
+        latitude: state.request.latitude,
+        longitude: state.request.longitude,
+        distanceKm: FC.distanceValueToKm(state.request.distance),
+        limit: 40
+      });
+    }
+
+    async function searchStoresWithFallback(type) {
+      if (!state.response) return;
+      skeleton.style.display = 'block';
+      runBtn.disabled = true;
+      runBtn.textContent = 'Running...';
+      FC.text(storesMsg, 'Loading stores...', '');
+
+      const order = [type, ...state.response.candidateTypes.filter((x) => x && x !== type)];
+      for (const t of order) {
+        try {
+          const data = await fetchStoresByType(t);
+          if (Array.isArray(data) && data.length > 0) {
+            state.selectedType = t;
+            state.stores = data;
+            state.page = 1;
+            state.swipeIndex = 0;
+            renderStoresPage();
+            renderSwipeCard();
+            FC.text(storesMsg, `Loaded ${data.length} stores (type: ${t}).`, 'ok');
+            skeleton.style.display = 'none';
+            runBtn.disabled = false;
+            runBtn.textContent = 'Run Recommendation';
+            return;
+          }
+        } catch (e) {
+          skeleton.style.display = 'none';
+          runBtn.disabled = false;
+          runBtn.textContent = 'Run Recommendation';
+          FC.text(storesMsg, `Store loading failed: ${e.message}`, 'error');
+          return;
+        }
+      }
+
+      state.stores = [];
+      renderStoresPage();
+      renderSwipeCard();
+      skeleton.style.display = 'none';
+      runBtn.disabled = false;
+      runBtn.textContent = 'Run Recommendation';
+      FC.text(storesMsg, 'No stores matched candidates in this distance. Try 5~10km or another city.', 'error');
+    }
+
+    async function runFlow() {
+      const coord = readManualCoordinates();
+      if (!coord) return;
+
+      setStep(3);
+      state.request = collectRequest(coord);
+      state.hasRun = true;
+      FC.text(runMsg, 'Calculating recommendation options...', '');
+      skeleton.style.display = 'block';
+      runBtn.disabled = true;
+      runBtn.textContent = 'Running...';
+
+      try {
+        const options = await FC.postJson('/api/recommendation/options', state.request);
+        state.response = options;
+        renderOptions(options);
+        FC.text(runMsg, 'Options ready. Loading stores...', 'ok');
+        await searchStoresWithFallback(options.primaryType);
+      } catch (e) {
+        skeleton.style.display = 'none';
+        runBtn.disabled = false;
+        runBtn.textContent = 'Run Recommendation';
+        FC.text(runMsg, `Failed: ${e.message}`, 'error');
+      }
+    }
+
+    function scheduleAutoRefresh() {
+      if (!document.getElementById('auto-refresh').checked) {
+        updateSnapshot();
+        FC.text(runMsg, 'Preference changed. Click Run Recommendation to refresh.', '');
+        return;
+      }
+      if (!state.hasRun) return;
+      clearTimeout(state.refreshTimer);
+      FC.text(runMsg, 'Preference changed. Refreshing...', '');
+      state.refreshTimer = setTimeout(() => runFlow(), 450);
+    }
+
+    async function searchCity() {
+      const query = document.getElementById('city-input').value.trim();
+      if (!query) {
+        FC.text(locMsg, 'Please input a city name.', 'error');
+        return;
+      }
+
+      FC.text(locMsg, 'Searching city...', '');
+      try {
+        const res = await fetch(`/api/geocode?query=${encodeURIComponent(query)}`, { headers: { Accept: 'application/json' } });
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || `City search failed (HTTP ${res.status})`);
+        }
+
+        const data = await res.json();
+        const lat = Number(data.latitude);
+        const lng = Number(data.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+          FC.text(locMsg, 'Search result has invalid coordinates.', 'error');
+          return;
+        }
+
+        setCoord(lat, lng, `search: ${data.displayName || query}`);
+      } catch (e) {
+        FC.text(locMsg, e.message || 'Failed to search city.', 'error');
+      }
+    }
+
+    document.getElementById('locate').addEventListener('click', () => {
+      if (!navigator.geolocation) {
+        FC.text(locMsg, 'Geolocation not supported.', 'error');
+        return;
+      }
+      FC.text(locMsg, 'Locating...', '');
+      navigator.geolocation.getCurrentPosition(
+        (pos) => setCoord(pos.coords.latitude, pos.coords.longitude, 'browser'),
+        (err) => FC.text(locMsg, err.message || 'Failed to get location', 'error'),
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
     });
 
-    document.getElementById('go-browse').addEventListener('click', () => {
-      const coord = readManualCoordinates();
-      if (!coord) {
-        return;
-      }
+        document.getElementById('apply-preset').addEventListener('click', () => {
+      const selected = document.getElementById('city-preset').value;
+      if (!selected) return FC.text(locMsg, 'Please select a preset city first.', 'error');
+      const [latRaw, lngRaw] = selected.split(',');
+      const lat = Number(latRaw);
+      const lng = Number(lngRaw);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return FC.text(locMsg, 'Invalid preset coordinates.', 'error');
+      const cityName = document.getElementById('city-preset').selectedOptions[0]?.textContent || 'preset';
+      setCoord(lat, lng, `preset: ${cityName}`);
+    });
 
-      saveLastLocation(coord.lat, coord.lng);
+    document.getElementById('search-city').addEventListener('click', searchCity);
+    document.getElementById('run').addEventListener('click', runFlow);
+    document.getElementById('reset-preferences').addEventListener('click', () => {
+      document.getElementById('taste').value = 'salty';
+      document.getElementById('price').value = '100_less';
+      document.getElementById('eatMode').value = 'alone';
+      document.getElementById('hunger').value = 'eat_much';
+      document.getElementById('distance').value = '1to5km';
+      document.getElementById('hotCold').value = 'hot';
+      updateSnapshot();
+      FC.text(runMsg, 'Preferences reset.', 'ok');
+    });
+
+    ['taste', 'price', 'eatMode', 'hunger', 'distance', 'hotCold'].forEach((id) => {
+      document.getElementById(id).addEventListener('change', scheduleAutoRefresh);
+    });
+
+    document.getElementById('view-list').addEventListener('click', () => setViewMode('list'));
+    document.getElementById('view-swipe').addEventListener('click', () => setViewMode('swipe'));
+
+    document.getElementById('prev-page').addEventListener('click', () => {
+      state.page -= 1;
+      renderStoresPage();
+    });
+    document.getElementById('next-page').addEventListener('click', () => {
+      state.page += 1;
+      renderStoresPage();
+    });
+
+    function swipeCurrent(like) {
+      if (!state.stores.length || state.swipeIndex >= state.stores.length) return;
+      const card = document.getElementById('swipe-item');
+      card.classList.remove('swipe-left', 'swipe-right');
+      card.classList.add(like ? 'swipe-right' : 'swipe-left');
+      setTimeout(() => {
+        card.classList.remove('swipe-left', 'swipe-right');
+        state.swipeIndex += 1;
+        renderSwipeCard();
+      }, 170);
+    }
+
+    document.getElementById('swipe-nope').addEventListener('click', () => swipeCurrent(false));
+    document.getElementById('swipe-like').addEventListener('click', () => swipeCurrent(true));
+    document.getElementById('swipe-item').addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft') swipeCurrent(false);
+      if (e.key === 'ArrowRight') swipeCurrent(true);
+    });
+
+    document.getElementById('open-hybrid').addEventListener('click', () => {
+      const coord = readManualCoordinates();
+      if (!coord) return;
       const q = new URLSearchParams({ lat: String(coord.lat), lng: String(coord.lng) });
-      location.href = `/browse.html?${q.toString()}`;
+      location.href = `/hybrid.html?${q.toString()}`;
+    });
+    document.getElementById('expand-distance').addEventListener('click', () => {
+      document.getElementById('distance').value = '5to10km';
+      setStep(2);
+      scheduleAutoRefresh();
+    });
+    document.getElementById('change-city').addEventListener('click', () => {
+      setStep(1);
+      document.getElementById('city-input').focus();
+      FC.text(locMsg, 'Enter a city and press Search City.', '');
+    });
+    document.querySelectorAll('#stepper .step').forEach((el) => {
+      el.addEventListener('click', () => {
+        const step = Number(el.dataset.step);
+        setStep(step);
+        const target = document.getElementById(step === 1 ? 'step-location' : step === 2 ? 'step-preferences' : 'step-results');
+        target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
     });
 
     document.getElementById('logout').addEventListener('click', () => {
       FC.clearAuth();
       location.href = '/index.html';
     });
+
+    const last = loadLastLocationSafe();
+    if (last) setCoord(last.lat, last.lng, 'last used');
+    else setCoord(51.5074, -0.1278, 'default');
+
+    setStep(1);
+    setViewMode('list');
+    renderSwipeCard();
+    updateSnapshot();
   </script>
 </body>
 </html>

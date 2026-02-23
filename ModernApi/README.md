@@ -2,6 +2,10 @@
 
 This is the cross-platform replacement track for the legacy `WebSite2` (ASP.NET Web Forms / .NET Framework).
 
+Algorithm document:
+- `RECOMMENDER_ALGORITHM.md` (ranking formula, weights, tuning guide)
+- `HYBRID_PLACES_ARCHITECTURE.md` (OSM + Google hybrid data architecture)
+
 ## Why this exists
 
 - Runs on macOS/Linux/Windows with .NET 8
@@ -20,10 +24,10 @@ This is the cross-platform replacement track for the legacy `WebSite2` (ASP.NET 
 ```bash
 cd ModernApi
 dotnet restore
-dotnet run
+dotnet run --urls http://localhost:5186
 ```
 
-Default URL (dev): `http://localhost:5000` or `https://localhost:5001`.
+Default URL for this project flow: `http://localhost:5186`.
 
 Frontend pages:
 
@@ -31,6 +35,19 @@ Frontend pages:
 - `/main.html` location + entry
 - `/recommender.html` recommendation flow
 - `/browse.html` nearby food browser flow
+- `/hybrid.html` hybrid places (OSM + Google optional)
+
+Seed data pipeline:
+1. Collect/build in one safe chain (stop on first failure):
+```bash
+cd ModernApi
+curl -fsS http://localhost:5186/api/health >/dev/null && \
+python3 scripts/collect_seed.py --api-base http://localhost:5186 && \
+RAW=$(ls -t data/raw/hybrid_raw_*.json | head -n 1) && \
+python3 scripts/dedupe_seed.py --in "$RAW" --out data/raw/hybrid_dedup.json && \
+python3 scripts/build_global_seed.py --in data/raw/hybrid_dedup.json --out Data/global_stores.json --merge-existing && \
+python3 scripts/coverage_report.py --seed Data/global_stores.json --cities-file scripts/cities.seed.json
+```
 
 `recommender.html` now includes:
 - card-based candidate selection

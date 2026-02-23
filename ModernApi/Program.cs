@@ -5,17 +5,33 @@ using FoodieCare.ModernApi.Options;
 using FoodieCare.ModernApi.Services;
 using Microsoft.Extensions.Options;
 using MySqlConnector;
+using System.Globalization;
 using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<FoodieCareOptions>(builder.Configuration.GetSection(FoodieCareOptions.SectionName));
+builder.Services.AddMemoryCache();
+builder.Services.AddHttpClient("overpass", client =>
+{
+    client.BaseAddress = new Uri("https://overpass-api.de/api/");
+    client.Timeout = TimeSpan.FromSeconds(20);
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("FoodieCare/1.0 (+https://github.com/JohnHuCC/FoodieCare)");
+});
+builder.Services.AddHttpClient("google-places", client =>
+{
+    client.BaseAddress = new Uri("https://maps.googleapis.com/maps/api/place/");
+    client.Timeout = TimeSpan.FromSeconds(15);
+});
 builder.Services.AddSingleton<RuleBasedTypeRecommender>();
 builder.Services.AddSingleton<AuthTokenService>();
 builder.Services.AddScoped<IRecommendationRepository, MySqlRecommendationRepository>();
 builder.Services.AddScoped<RecommendationService>();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<InteractionService>();
+builder.Services.AddScoped<IPlacesProvider, OsmPlacesProvider>();
+builder.Services.AddScoped<IPlacesProvider, GooglePlacesProvider>();
+builder.Services.AddScoped<HybridPlacesService>();
 
 var app = builder.Build();
 
@@ -60,10 +76,97 @@ app.MapGet("/api/seed/count", (IRecommendationRepository repository) =>
     if (repository is MySqlRecommendationRepository mySqlRepository)
     {
         var count = mySqlRepository.DebugGetSeedCount();
-        return Results.Ok(new { seedCount = count });
+        var profile = mySqlRepository.DebugGetActiveRankingProfile();
+        return Results.Ok(new { seedCount = count, activeRankingProfile = profile });
     }
 
-    return Results.Ok(new { seedCount = 0 });
+    return Results.Ok(new { seedCount = 0, activeRankingProfile = "n/a" });
+});
+
+app.MapGet("/api/geocode", async (string query, CancellationToken ct) =>
+{
+    if (string.IsNullOrWhiteSpace(query))
+    {
+        return Results.BadRequest("query is required.");
+    }
+
+    using var http = new HttpClient();
+    http.DefaultRequestHeaders.UserAgent.ParseAdd("FoodieCare/1.0 (+https://github.com/JohnHuCC/FoodieCare)");
+    http.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+
+    // Primary provider: OpenStreetMap Nominatim
+    var nominatimUrl = $"https://nominatim.openstreetmap.org/search?format=json&limit=1&q={Uri.EscapeDataString(query)}";
+    try
+    {
+        var response = await http.GetAsync(nominatimUrl, ct);
+        if (response.IsSuccessStatusCode)
+        {
+            var json = await response.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
+            {
+                var first = doc.RootElement[0];
+                if (first.TryGetProperty("lat", out var latEl) &&
+                    first.TryGetProperty("lon", out var lonEl) &&
+                    double.TryParse(latEl.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var lat) &&
+                    double.TryParse(lonEl.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var lng))
+                {
+                    var name = first.TryGetProperty("display_name", out var nameEl) ? nameEl.GetString() : query;
+                    return Results.Ok(new { latitude = lat, longitude = lng, provider = "nominatim", displayName = name });
+                }
+            }
+        }
+    }
+    catch
+    {
+    }
+
+    // Fallback provider: Open-Meteo geocoding
+    var meteoUrl = $"https://geocoding-api.open-meteo.com/v1/search?name={Uri.EscapeDataString(query)}&count=1&language=en&format=json";
+    try
+    {
+        var response = await http.GetAsync(meteoUrl, ct);
+        if (response.IsSuccessStatusCode)
+        {
+            var json = await response.Content.ReadAsStringAsync(ct);
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.TryGetProperty("results", out var results) &&
+                results.ValueKind == JsonValueKind.Array &&
+                results.GetArrayLength() > 0)
+            {
+                var first = results[0];
+                if (first.TryGetProperty("latitude", out var latEl) &&
+                    first.TryGetProperty("longitude", out var lngEl) &&
+                    latEl.TryGetDouble(out var lat) &&
+                    lngEl.TryGetDouble(out var lng))
+                {
+                    var name = first.TryGetProperty("name", out var nameEl) ? nameEl.GetString() : query;
+                    return Results.Ok(new { latitude = lat, longitude = lng, provider = "open-meteo", displayName = name });
+                }
+            }
+        }
+    }
+    catch
+    {
+    }
+
+    return Results.NotFound(new { message = $"No geocoding result for '{query}'." });
+});
+
+app.MapPost("/api/places/hybrid-search", async (HybridPlacesSearchRequest request, HybridPlacesService service, IOptions<FoodieCareOptions> options, CancellationToken ct) =>
+{
+    if (!options.Value.HybridPlaces.Enabled)
+    {
+        return Results.BadRequest("Hybrid places search is disabled.");
+    }
+
+    if (request.Latitude is < -90 or > 90 || request.Longitude is < -180 or > 180)
+    {
+        return Results.BadRequest("Invalid coordinates.");
+    }
+
+    var result = await service.SearchAsync(request, ct);
+    return Results.Ok(result);
 });
 
 app.MapPost("/api/auth/register", async (RegisterRequest request, AuthService authService, CancellationToken ct) =>

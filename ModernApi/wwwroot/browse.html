@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>FoodieCare - Browse Nearby</title>
-  <link rel="stylesheet" href="/assets/app.css" />
+  <link rel="stylesheet" href="/assets/app.css?v=20260223c" />
 </head>
 <body>
   <div class="page">
@@ -59,13 +59,13 @@
     </section>
   </div>
 
-  <script src="/assets/app.js"></script>
+  <script src="/assets/app.js?v=20260223c"></script>
   <script>
     const auth = FC.requireAuth('/index.html');
     if (!auth) throw new Error('Unauthorized');
 
     const fromQuery = FC.parseQuery();
-    const loadLastLocation = () => {
+    const getLastLocationSafe = () => {
       if (typeof FC.loadLastLocation === 'function') return FC.loadLastLocation();
       try {
         const raw = localStorage.getItem('foodie_last_location');
@@ -77,7 +77,7 @@
         return null;
       }
     };
-    const lastLocation = loadLastLocation();
+    const lastLocation = getLastLocationSafe();
     const q = (Number.isFinite(fromQuery.lat) && Number.isFinite(fromQuery.lng))
       ? fromQuery
       : (lastLocation || { lat: NaN, lng: NaN });

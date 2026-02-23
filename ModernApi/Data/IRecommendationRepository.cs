@@ -28,6 +28,13 @@ public interface IRecommendationRepository
         int limit,
         CancellationToken cancellationToken);
 
+    Task<IReadOnlyList<string>> GetNearbyTypesAsync(
+        double latitude,
+        double longitude,
+        int maxDistanceKm,
+        int limit,
+        CancellationToken cancellationToken);
+
     Task<IReadOnlyList<string>> GetRecentUserTypesAsync(
         int userId,
         int limit,
