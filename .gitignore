@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# .NET build outputs
+**/bin/
+**/obj/
+
+# Python cache
+**/__pycache__/
+*.pyc
+
+# Local data pipeline outputs
+ModernApi/Data/raw/
+ModernApi/Data/reports/
