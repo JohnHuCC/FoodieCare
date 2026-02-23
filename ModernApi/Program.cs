@@ -55,6 +55,17 @@ app.MapGet("/api/health", () => Results.Ok(new
     timestamp = DateTimeOffset.UtcNow
 }));
 
+app.MapGet("/api/seed/count", (IRecommendationRepository repository) =>
+{
+    if (repository is MySqlRecommendationRepository mySqlRepository)
+    {
+        var count = mySqlRepository.DebugGetSeedCount();
+        return Results.Ok(new { seedCount = count });
+    }
+
+    return Results.Ok(new { seedCount = 0 });
+});
+
 app.MapPost("/api/auth/register", async (RegisterRequest request, AuthService authService, CancellationToken ct) =>
 {
     if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))

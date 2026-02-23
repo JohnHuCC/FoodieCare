@@ -93,6 +93,22 @@ function parseQuery() {
   };
 }
 
+function saveLastLocation(lat, lng) {
+  localStorage.setItem('foodie_last_location', JSON.stringify({ lat, lng }));
+}
+
+function loadLastLocation() {
+  const raw = localStorage.getItem('foodie_last_location');
+  if (!raw) return null;
+  try {
+    const obj = JSON.parse(raw);
+    if (!Number.isFinite(obj?.lat) || !Number.isFinite(obj?.lng)) return null;
+    return obj;
+  } catch {
+    return null;
+  }
+}
+
 function distanceValueToKm(value) {
   switch (value) {
     case '1km_less': return 1;
@@ -147,6 +163,8 @@ window.FC = {
   isGuestAuth,
   text,
   parseQuery,
+  saveLastLocation,
+  loadLastLocation,
   distanceValueToKm,
   priceToId,
   eatModeToId,

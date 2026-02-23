@@ -64,8 +64,25 @@
     const auth = FC.requireAuth('/index.html');
     if (!auth) throw new Error('Unauthorized');
 
-    const q = FC.parseQuery();
+    const fromQuery = FC.parseQuery();
+    const loadLastLocation = () => {
+      if (typeof FC.loadLastLocation === 'function') return FC.loadLastLocation();
+      try {
+        const raw = localStorage.getItem('foodie_last_location');
+        if (!raw) return null;
+        const obj = JSON.parse(raw);
+        if (!Number.isFinite(obj?.lat) || !Number.isFinite(obj?.lng)) return null;
+        return obj;
+      } catch {
+        return null;
+      }
+    };
+    const lastLocation = loadLastLocation();
+    const q = (Number.isFinite(fromQuery.lat) && Number.isFinite(fromQuery.lng))
+      ? fromQuery
+      : (lastLocation || { lat: NaN, lng: NaN });
     if (!Number.isFinite(q.lat) || !Number.isFinite(q.lng)) {
+      alert('請先在 Main 設定位置，再進入附近餐廳頁。');
       location.href = '/main.html';
     }
 

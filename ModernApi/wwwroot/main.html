@@ -92,10 +92,18 @@
     const latInput = document.getElementById('lat');
     const lngInput = document.getElementById('lng');
     const msg = document.getElementById('loc-msg');
+    const saveLastLocation = (lat, lng) => {
+      if (typeof FC.saveLastLocation === 'function') {
+        FC.saveLastLocation(lat, lng);
+        return;
+      }
+      localStorage.setItem('foodie_last_location', JSON.stringify({ lat, lng }));
+    };
 
     function setCoord(lat, lng, source) {
       latInput.value = String(lat);
       lngInput.value = String(lng);
+      saveLastLocation(lat, lng);
       FC.text(msg, `Location set (${source})`, 'ok');
     }
 
@@ -197,6 +205,7 @@
         return;
       }
 
+      saveLastLocation(coord.lat, coord.lng);
       const q = new URLSearchParams({ lat: String(coord.lat), lng: String(coord.lng) });
       location.href = `/recommender.html?${q.toString()}`;
     });
@@ -207,6 +216,7 @@
         return;
       }
 
+      saveLastLocation(coord.lat, coord.lng);
       const q = new URLSearchParams({ lat: String(coord.lat), lng: String(coord.lng) });
       location.href = `/browse.html?${q.toString()}`;
     });

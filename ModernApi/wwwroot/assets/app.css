@@ -268,3 +268,59 @@ button.secondary {
 
 .toast.error { background: #8e2d17; }
 .toast.ok { background: #206a3b; }
+
+.swipe-stage {
+  margin-top: 8px;
+  perspective: 1000px;
+}
+
+.swipe-item {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 15% 12%, #fff6e4 0%, transparent 28%),
+    linear-gradient(160deg, #fffefb 0%, #fff7ec 100%);
+  padding: 18px;
+  min-height: 190px;
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.08);
+  transition: transform .16s ease, opacity .16s ease, box-shadow .16s ease;
+  touch-action: pan-y;
+  user-select: none;
+  outline: none;
+}
+
+.swipe-item:focus {
+  box-shadow: 0 0 0 2px rgba(201, 90, 27, .2), 0 10px 22px rgba(0, 0, 0, 0.08);
+}
+
+.swipe-item.swipe-left {
+  transform: translateX(-140px) rotate(-8deg);
+  opacity: .35;
+}
+
+.swipe-item.swipe-right {
+  transform: translateX(140px) rotate(8deg);
+  opacity: .35;
+}
+
+.swipe-chip {
+  display: inline-block;
+  border-radius: 999px;
+  border: 1px solid #eac7a7;
+  background: #fff2df;
+  color: #88512c;
+  font-size: 12px;
+  padding: 4px 10px;
+}
+
+.swipe-name {
+  margin-top: 10px;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.swipe-meta {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 14px;
+}

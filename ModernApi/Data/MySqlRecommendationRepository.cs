@@ -10,6 +10,8 @@ namespace FoodieCare.ModernApi.Data;
 
 public sealed class MySqlRecommendationRepository : IRecommendationRepository
 {
+    private const int SeedScaleFactor = 10;
+
     private sealed class SeedStore
     {
         public string Name { get; set; } = string.Empty;
@@ -58,7 +60,7 @@ public sealed class MySqlRecommendationRepository : IRecommendationRepository
     public MySqlRecommendationRepository(IOptions<FoodieCareOptions> options, IWebHostEnvironment env)
     {
         _connectionString = options.Value.ConnectionString;
-        _seedStores = LoadSeedStores(env.ContentRootPath);
+        _seedStores = ExpandSeedStores(LoadSeedStores(env.ContentRootPath), SeedScaleFactor);
     }
 
     public Task<IReadOnlyList<StoreDto>> BrowseStoresAsync(
@@ -84,6 +86,8 @@ public sealed class MySqlRecommendationRepository : IRecommendationRepository
     {
         return await QueryStoresAsync(type, priceBand, latitude, longitude, maxDistanceKm, limit, cancellationToken);
     }
+
+    public int DebugGetSeedCount() => _seedStores.Count;
 
     private async Task<IReadOnlyList<StoreDto>> QueryStoresAsync(
         string? type,
@@ -324,6 +328,50 @@ LIMIT @limit;";
         {
             return Array.Empty<SeedStore>();
         }
+    }
+
+    private static IReadOnlyList<SeedStore> ExpandSeedStores(IReadOnlyList<SeedStore> source, int scaleFactor)
+    {
+        if (source.Count == 0 || scaleFactor <= 1)
+        {
+            return source;
+        }
+
+        var expanded = new List<SeedStore>(source.Count * scaleFactor);
+        expanded.AddRange(source);
+
+        for (var round = 1; round < scaleFactor; round++)
+        {
+            foreach (var item in source)
+            {
+                var seed = Math.Abs(HashCode.Combine(item.Name, item.C3 ?? string.Empty, item.C4 ?? string.Empty, round));
+                var latOffset = ((seed % 2001) - 1000) / 100000.0; // about +/- 0.01
+                var lngOffset = (((seed / 2001) % 2001) - 1000) / 100000.0;
+
+                var priceDelta = (seed % 9) - 4; // -4..+4
+                decimal? adjustedPrice = item.AvgPrice.HasValue
+                    ? Math.Max(1m, item.AvgPrice.Value + priceDelta)
+                    : null;
+
+                double? adjustedRating = item.Rating.HasValue
+                    ? Math.Clamp(item.Rating.Value + (((seed / 17) % 5) - 2) * 0.05, 3.0, 5.0)
+                    : null;
+
+                expanded.Add(new SeedStore
+                {
+                    Name = $"{item.Name} #{round + 1}",
+                    Phone = item.Phone,
+                    Lat = Math.Clamp(item.Lat + latOffset, -89.9, 89.9),
+                    Lng = Math.Clamp(item.Lng + lngOffset, -179.9, 179.9),
+                    Rating = adjustedRating,
+                    AvgPrice = adjustedPrice,
+                    C3 = item.C3 ?? string.Empty,
+                    C4 = item.C4
+                });
+            }
+        }
+
+        return expanded;
     }
 
     public async Task<IReadOnlyList<string>> GetAssociationCandidatesAsync(
