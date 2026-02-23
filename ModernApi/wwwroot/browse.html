@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FoodieCare - Browse Nearby</title>
+  <link rel="stylesheet" href="/assets/app.css" />
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <button class="secondary" id="back-main">Back Main</button>
+      <button class="secondary" id="logout">Logout</button>
+    </div>
+
+    <header class="hero">
+      <h1>Browse Nearby Foods</h1>
+      <p class="sub">Equivalent to old food browser flow, now API-based.</p>
+    </header>
+
+    <section class="card">
+      <div class="row">
+        <div>
+          <label>Distance</label>
+          <select id="distance">
+            <option value="1km_less">1km_less</option>
+            <option value="1to5km" selected>1to5km</option>
+            <option value="5to10km">5to10km</option>
+            <option value="10km_more">10km_more</option>
+          </select>
+        </div>
+        <div>
+          <label>Price</label>
+          <select id="price">
+            <option value="">Any</option>
+            <option value="100_less">100_less</option>
+            <option value="100_199">100_199</option>
+            <option value="200_299">200_299</option>
+            <option value="300_399">300_399</option>
+            <option value="400_499">400_499</option>
+            <option value="500_more">500_more</option>
+          </select>
+        </div>
+        <div>
+          <label>Type (optional)</label>
+          <input id="type" placeholder="e.g. 日式料理" />
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="search">Search Nearby</button>
+      </div>
+      <p id="msg" class="notice"></p>
+    </section>
+
+    <section class="card" id="stores-card" style="display:none;">
+      <h2>Stores</h2>
+      <div id="stores" class="store-list"></div>
+    </section>
+  </div>
+
+  <script src="/assets/app.js"></script>
+  <script>
+    const auth = FC.requireAuth('/index.html');
+    if (!auth) throw new Error('Unauthorized');
+
+    const q = FC.parseQuery();
+    if (!Number.isFinite(q.lat) || !Number.isFinite(q.lng)) {
+      location.href = '/main.html';
+    }
+
+    const msg = document.getElementById('msg');
+
+    document.getElementById('search').addEventListener('click', async () => {
+      FC.text(msg, 'Searching...');
+
+      try {
+        const data = await FC.postJson('/api/stores/browse', {
+          type: document.getElementById('type').value.trim() || null,
+          price: document.getElementById('price').value || null,
+          latitude: q.lat,
+          longitude: q.lng,
+          distanceKm: FC.distanceValueToKm(document.getElementById('distance').value),
+          limit: 50
+        });
+
+        const list = document.getElementById('stores');
+        const card = document.getElementById('stores-card');
+        list.innerHTML = '';
+        card.style.display = 'block';
+
+        if (!data || data.length === 0) {
+          FC.text(msg, 'No stores found.', 'error');
+          return;
+        }
+
+        data.forEach((s) => {
+          const el = document.createElement('article');
+          el.className = 'store';
+          el.innerHTML = `
+            <div class="store-head">
+              <div class="store-name">${s.name || ''}</div>
+              <div>${Number(s.distanceKm || 0).toFixed(2)} km</div>
+            </div>
+            <div class="meta">Phone: ${s.phone || '-'}</div>
+            <div class="meta">AvgPrice: ${s.averagePrice ?? '-'}</div>
+            <div class="actions">
+              <button class="open-map secondary">Open Map</button>
+              <button class="record-click">I Choose This</button>
+            </div>
+          `;
+
+          el.querySelector('.open-map').addEventListener('click', () => {
+            const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${s.latitude},${s.longitude}`)}`;
+            window.open(url, '_blank');
+          });
+
+          el.querySelector('.record-click').addEventListener('click', async () => {
+            if (FC.isGuestAuth(auth)) {
+              FC.text(msg, 'Guest mode: click tracking skipped.', 'ok');
+              return;
+            }
+            try {
+              await FC.postJson('/api/interactions/click', { storeName: s.name }, FC.authHeader());
+              FC.text(msg, `Recorded click: ${s.name}`, 'ok');
+              FC.toast(`Recorded click: ${s.name}`, 'ok');
+            } catch (e) {
+              FC.text(msg, e.message, 'error');
+            }
+          });
+
+          list.appendChild(el);
+        });
+
+        FC.text(msg, `Loaded ${data.length} stores.`, 'ok');
+      } catch (e) {
+        FC.text(msg, e.message, 'error');
+      }
+    });
+
+    document.getElementById('back-main').addEventListener('click', () => {
+      location.href = '/main.html';
+    });
+
+    document.getElementById('logout').addEventListener('click', () => {
+      FC.clearAuth();
+      location.href = '/index.html';
+    });
+  </script>
+</body>
+</html>

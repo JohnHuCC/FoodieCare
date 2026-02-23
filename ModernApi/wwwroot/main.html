@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FoodieCare - Main</title>
+  <link rel="stylesheet" href="/assets/app.css" />
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <button class="secondary" id="whoami"></button>
+      <button class="secondary" id="logout">Logout</button>
+    </div>
+
+    <header class="hero">
+      <h1>Main Menu</h1>
+      <p class="sub">Get your location, then start recommendation flow.</p>
+    </header>
+
+    <section class="card">
+      <div class="actions">
+        <button id="locate">Use Current Location</button>
+        <button id="default-loc" class="secondary">Use KMU Default</button>
+        <button id="london-loc" class="secondary">Use Global Demo (London)</button>
+      </div>
+      <p id="loc-msg" class="notice"></p>
+
+      <div class="row">
+        <div>
+          <label>Tourist City Preset</label>
+          <select id="city-preset">
+            <option value="">Select a city</option>
+            <option value="35.6762,139.6503">Tokyo</option>
+            <option value="51.5074,-0.1278">London</option>
+            <option value="48.8566,2.3522">Paris</option>
+            <option value="40.7128,-74.0060">New York</option>
+            <option value="34.0522,-118.2437">Los Angeles</option>
+            <option value="41.9028,12.4964">Rome</option>
+            <option value="25.2048,55.2708">Dubai</option>
+            <option value="1.3521,103.8198">Singapore</option>
+            <option value="13.7563,100.5018">Bangkok</option>
+            <option value="22.3193,114.1694">Hong Kong</option>
+            <option value="25.0330,121.5654">Taipei</option>
+            <option value="-33.8688,151.2093">Sydney</option>
+          </select>
+        </div>
+        <div class="actions" style="align-items:flex-end;">
+          <button id="apply-preset" class="secondary">Apply Preset</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label>Free Input City Name</label>
+          <input id="city-input" placeholder="e.g. Barcelona, Seoul, Vancouver" />
+        </div>
+        <div class="actions" style="align-items:flex-end;">
+          <button id="search-city" class="secondary">Search City</button>
+        </div>
+      </div>
+
+      <div class="row">
+        <div>
+          <label>Latitude</label>
+          <input id="lat" />
+        </div>
+        <div>
+          <label>Longitude</label>
+          <input id="lng" />
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="go-rec">Recommendation System</button>
+        <button id="go-browse" class="secondary">Browse Nearby Foods</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="/assets/app.js"></script>
+  <script>
+    const auth = FC.requireAuth('/index.html');
+    if (!auth) throw new Error('Unauthorized');
+
+    if (auth) {
+      document.getElementById('whoami').textContent = FC.isGuestAuth(auth)
+        ? 'Guest Mode'
+        : `${auth.username} (#${auth.userId})`;
+    }
+
+    const latInput = document.getElementById('lat');
+    const lngInput = document.getElementById('lng');
+    const msg = document.getElementById('loc-msg');
+
+    function setCoord(lat, lng, source) {
+      latInput.value = String(lat);
+      lngInput.value = String(lng);
+      FC.text(msg, `Location set (${source})`, 'ok');
+    }
+
+    document.getElementById('locate').addEventListener('click', () => {
+      if (!navigator.geolocation) {
+        FC.text(msg, 'Geolocation not supported.', 'error');
+        return;
+      }
+
+      FC.text(msg, 'Locating...');
+      navigator.geolocation.getCurrentPosition(
+        (pos) => setCoord(pos.coords.latitude, pos.coords.longitude, 'browser'),
+        (err) => FC.text(msg, err.message || 'Failed to get location', 'error'),
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    });
+
+    document.getElementById('default-loc').addEventListener('click', () => {
+      setCoord(22.647423, 120.309627, 'KMU default');
+    });
+
+    document.getElementById('london-loc').addEventListener('click', () => {
+      setCoord(51.5074, -0.1278, 'London default');
+    });
+
+    document.getElementById('apply-preset').addEventListener('click', () => {
+      const selected = document.getElementById('city-preset').value;
+      if (!selected) {
+        FC.text(msg, 'Please select a preset city first.', 'error');
+        return;
+      }
+
+      const [latRaw, lngRaw] = selected.split(',');
+      const lat = Number(latRaw);
+      const lng = Number(lngRaw);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        FC.text(msg, 'Invalid preset coordinates.', 'error');
+        return;
+      }
+
+      const cityName = document.getElementById('city-preset').selectedOptions[0]?.textContent || 'preset';
+      setCoord(lat, lng, `preset: ${cityName}`);
+    });
+
+    document.getElementById('search-city').addEventListener('click', async () => {
+      const query = document.getElementById('city-input').value.trim();
+      if (!query) {
+        FC.text(msg, 'Please input a city name.', 'error');
+        return;
+      }
+
+      FC.text(msg, 'Searching city...');
+
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`;
+        const res = await fetch(url, { headers: { Accept: 'application/json' } });
+        if (!res.ok) {
+          throw new Error(`City search failed (HTTP ${res.status})`);
+        }
+
+        const data = await res.json();
+        if (!Array.isArray(data) || data.length === 0) {
+          FC.text(msg, `City not found: ${query}`, 'error');
+          return;
+        }
+
+        const lat = Number(data[0].lat);
+        const lng = Number(data[0].lon);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+          FC.text(msg, 'Search result has invalid coordinates.', 'error');
+          return;
+        }
+
+        setCoord(lat, lng, `search: ${query}`);
+      } catch (e) {
+        FC.text(msg, e.message || 'Failed to search city.', 'error');
+      }
+    });
+
+    function readManualCoordinates() {
+      const lat = Number(latInput.value);
+      const lng = Number(lngInput.value);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        FC.text(msg, 'Please input valid latitude/longitude.', 'error');
+        return null;
+      }
+
+      if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        FC.text(msg, 'Coordinates out of range.', 'error');
+        return null;
+      }
+
+      return { lat, lng };
+    }
+
+    document.getElementById('go-rec').addEventListener('click', () => {
+      const coord = readManualCoordinates();
+      if (!coord) {
+        return;
+      }
+
+      const q = new URLSearchParams({ lat: String(coord.lat), lng: String(coord.lng) });
+      location.href = `/recommender.html?${q.toString()}`;
+    });
+
+    document.getElementById('go-browse').addEventListener('click', () => {
+      const coord = readManualCoordinates();
+      if (!coord) {
+        return;
+      }
+
+      const q = new URLSearchParams({ lat: String(coord.lat), lng: String(coord.lng) });
+      location.href = `/browse.html?${q.toString()}`;
+    });
+
+    document.getElementById('logout').addEventListener('click', () => {
+      FC.clearAuth();
+      location.href = '/index.html';
+    });
+  </script>
+</body>
+</html>

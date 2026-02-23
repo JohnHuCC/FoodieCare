@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FoodieCare - Recommender</title>
+  <link rel="stylesheet" href="/assets/app.css" />
+</head>
+<body>
+  <div class="page">
+    <div class="topbar">
+      <button class="secondary" id="back-main">Back Main</button>
+      <button class="secondary" id="logout">Logout</button>
+    </div>
+
+    <header class="hero">
+      <h1>Recommendation</h1>
+      <p class="sub">Fill preferences, then get options and nearby stores.</p>
+    </header>
+
+    <section class="card">
+      <div class="row">
+        <div>
+          <label>Taste</label>
+          <select id="taste">
+            <option value="salty">salty</option>
+            <option value="sweety">sweety</option>
+          </select>
+        </div>
+        <div>
+          <label>Price</label>
+          <select id="price">
+            <option value="100_less">100_less</option>
+            <option value="100_199">100_199</option>
+            <option value="200_299">200_299</option>
+            <option value="300_399">300_399</option>
+            <option value="400_499">400_499</option>
+            <option value="500_more">500_more</option>
+          </select>
+        </div>
+        <div>
+          <label>Eat Mode</label>
+          <select id="eatMode">
+            <option value="alone">alone</option>
+            <option value="friend">friend</option>
+            <option value="couple">couple</option>
+            <option value="family">family</option>
+          </select>
+        </div>
+        <div>
+          <label>Hunger</label>
+          <select id="hunger">
+            <option value="eat_much">eat_much</option>
+            <option value="eat_less">eat_less</option>
+          </select>
+        </div>
+        <div>
+          <label>Distance</label>
+          <select id="distance">
+            <option value="1km_less">1km_less</option>
+            <option value="1to5km">1to5km</option>
+            <option value="5to10km">5to10km</option>
+            <option value="10km_more">10km_more</option>
+          </select>
+        </div>
+        <div>
+          <label>Hot/Cold</label>
+          <select id="hotCold">
+            <option value="hot">hot</option>
+            <option value="cold">cold</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="run">Get Recommendation</button>
+      </div>
+      <p id="run-msg" class="notice"></p>
+    </section>
+
+    <section class="card" id="options-card" style="display:none;">
+      <h2>Options</h2>
+      <p class="sub">Primary and candidate categories from the new API.</p>
+      <div id="options"></div>
+      <div id="candidate-grid" class="candidate-grid"></div>
+      <div class="actions">
+        <button id="search-selected">Search Selected Type</button>
+      </div>
+      <p id="options-msg" class="notice"></p>
+    </section>
+
+    <section class="card" id="stores-card" style="display:none;">
+      <h2>Stores</h2>
+      <div id="stores" class="store-list"></div>
+      <div class="pagination">
+        <button id="prev-page" class="secondary">Prev</button>
+        <button id="next-page" class="secondary">Next</button>
+        <span id="page-info" class="pill"></span>
+      </div>
+      <div class="map-panel">
+        <div class="map-header" id="map-header">Map Preview</div>
+        <iframe id="map-frame" class="map-frame" loading="lazy" referrerpolicy="no-referrer-when-downgrade"></iframe>
+      </div>
+      <p id="stores-msg" class="notice"></p>
+    </section>
+  </div>
+
+  <script src="/assets/app.js"></script>
+  <script>
+    const auth = FC.requireAuth('/index.html');
+    if (!auth) throw new Error('Unauthorized');
+    const q = FC.parseQuery();
+
+    if (!Number.isFinite(q.lat) || !Number.isFinite(q.lng)) {
+      location.href = '/main.html';
+    }
+
+    const state = {
+      request: null,
+      response: null,
+      selectedType: null,
+      stores: [],
+      page: 1,
+      pageSize: 10
+    };
+
+    const runMsg = document.getElementById('run-msg');
+    const optionsMsg = document.getElementById('options-msg');
+    const storesMsg = document.getElementById('stores-msg');
+
+    function collectRequest() {
+      return {
+        userId: auth.userId,
+        price: document.getElementById('price').value,
+        eatMode: document.getElementById('eatMode').value,
+        hunger: document.getElementById('hunger').value,
+        distance: document.getElementById('distance').value,
+        hotCold: document.getElementById('hotCold').value,
+        taste: document.getElementById('taste').value,
+        latitude: q.lat,
+        longitude: q.lng
+      };
+    }
+
+    function renderOptions(data) {
+      const box = document.getElementById('options');
+      const candidatesBox = document.getElementById('candidate-grid');
+      box.innerHTML = '';
+      candidatesBox.innerHTML = '';
+
+      data.candidateTypes.forEach((t, i) => {
+        const el = document.createElement('span');
+        el.className = 'pill';
+        el.textContent = i === 0 ? `${t} (primary)` : t;
+        box.appendChild(el);
+      });
+
+      data.candidateTypes.forEach((t, i) => {
+        const card = document.createElement('article');
+        card.className = `candidate-card${i === 0 ? ' active' : ''}`;
+        card.dataset.type = t;
+        card.innerHTML = `
+          <div class="candidate-name">${t}</div>
+          <div class="candidate-tag">${i === 0 ? 'Primary' : 'Candidate'}</div>
+        `;
+        card.addEventListener('click', () => {
+          state.selectedType = t;
+          [...candidatesBox.querySelectorAll('.candidate-card')].forEach((x) => x.classList.remove('active'));
+          card.classList.add('active');
+          FC.text(optionsMsg, `Selected type: ${t}`, 'ok');
+        });
+        candidatesBox.appendChild(card);
+      });
+
+      state.selectedType = data.primaryType;
+      FC.text(optionsMsg, `Selected type: ${data.primaryType}`, 'ok');
+    }
+
+    async function submitFeedback(type, agree) {
+      if (FC.isGuestAuth(auth)) return;
+      const r = state.request;
+      if (!r) return;
+
+      try {
+        await FC.postJson('/api/interactions/recommendation-feedback', {
+          tasteId: FC.tasteToId(r.taste),
+          hungerId: FC.hungerToId(r.hunger),
+          hotColdId: FC.hotColdToId(r.hotCold),
+          eatModeId: FC.eatModeToId(r.eatMode),
+          distanceId: FC.distanceValueToKm(r.distance) === 1 ? 1 : FC.distanceValueToKm(r.distance) === 5 ? 2 : FC.distanceValueToKm(r.distance) === 10 ? 3 : 4,
+          priceId: FC.priceToId(r.price),
+          type,
+          agree,
+          storeName: null
+        }, FC.authHeader());
+      } catch (_) {
+      }
+    }
+
+    function mapUrlFor(lat, lng) {
+      return `https://www.google.com/maps?q=${encodeURIComponent(`${lat},${lng}`)}&z=15&output=embed`;
+    }
+
+    function renderStoresPage() {
+      const list = document.getElementById('stores');
+      const pageInfo = document.getElementById('page-info');
+      const prevBtn = document.getElementById('prev-page');
+      const nextBtn = document.getElementById('next-page');
+      const mapHeader = document.getElementById('map-header');
+      const mapFrame = document.getElementById('map-frame');
+
+      list.innerHTML = '';
+
+      if (!state.stores || state.stores.length === 0) {
+        pageInfo.textContent = '0 / 0';
+        prevBtn.disabled = true;
+        nextBtn.disabled = true;
+        return;
+      }
+
+      const totalPages = Math.max(1, Math.ceil(state.stores.length / state.pageSize));
+      if (state.page > totalPages) state.page = totalPages;
+      if (state.page < 1) state.page = 1;
+
+      const start = (state.page - 1) * state.pageSize;
+      const current = state.stores.slice(start, start + state.pageSize);
+
+      current.forEach((s, idx) => {
+        const card = document.createElement('article');
+        card.className = 'store';
+        card.innerHTML = `
+          <div class="store-head">
+            <div class="store-name">${s.name || ''}</div>
+            <div>${Number(s.distanceKm || 0).toFixed(2)} km</div>
+          </div>
+          <div class="meta">Type: ${state.selectedType}</div>
+          <div class="meta">Phone: ${s.phone || '-'}</div>
+          <div class="meta">AvgPrice: ${s.averagePrice ?? '-'}</div>
+          <div class="actions">
+            <button class="preview-map secondary">Preview Map</button>
+            <button class="open-map secondary">Open Map</button>
+            <button class="record-click">I Choose This</button>
+          </div>
+        `;
+
+        const selectMap = () => {
+          mapHeader.textContent = `Map Preview: ${s.name || 'Store'}`;
+          mapFrame.src = mapUrlFor(s.latitude, s.longitude);
+        };
+
+        if (idx === 0) selectMap();
+
+        card.querySelector('.preview-map').addEventListener('click', selectMap);
+        card.querySelector('.open-map').addEventListener('click', () => {
+          const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${s.latitude},${s.longitude}`)}`;
+          window.open(url, '_blank');
+        });
+
+        card.querySelector('.record-click').addEventListener('click', async () => {
+          if (FC.isGuestAuth(auth)) {
+            FC.text(storesMsg, 'Guest mode: click tracking skipped.', 'ok');
+            return;
+          }
+          try {
+            await FC.postJson('/api/interactions/click', { storeName: s.name }, FC.authHeader());
+            FC.text(storesMsg, `Recorded click: ${s.name}`, 'ok');
+            FC.toast(`Recorded click: ${s.name}`, 'ok');
+          } catch (e) {
+            FC.text(storesMsg, e.message, 'error');
+          }
+        });
+
+        list.appendChild(card);
+      });
+
+      pageInfo.textContent = `${state.page} / ${totalPages}`;
+      prevBtn.disabled = state.page <= 1;
+      nextBtn.disabled = state.page >= totalPages;
+    }
+
+    async function searchStores(type) {
+      state.selectedType = type;
+      state.page = 1;
+      document.getElementById('stores-card').style.display = 'block';
+      FC.text(storesMsg, 'Loading stores...');
+
+      await submitFeedback(type, type === state.response.primaryType);
+
+      try {
+        const data = await FC.postJson('/api/recommendation/stores', {
+          type,
+          price: state.request.price,
+          latitude: state.request.latitude,
+          longitude: state.request.longitude,
+          distanceKm: FC.distanceValueToKm(state.request.distance),
+          limit: 20
+        });
+
+        if (!data || data.length === 0) {
+          state.stores = [];
+          renderStoresPage();
+          FC.text(storesMsg, 'No stores found in this filter.', 'error');
+          return;
+        }
+
+        state.stores = data;
+        renderStoresPage();
+
+        FC.text(storesMsg, `Loaded ${data.length} stores.`, 'ok');
+      } catch (e) {
+        FC.text(storesMsg, e.message, 'error');
+      }
+    }
+
+    document.getElementById('run').addEventListener('click', async () => {
+      state.request = collectRequest();
+      FC.text(runMsg, 'Computing options...');
+
+      try {
+        const data = await FC.postJson('/api/recommendation/options', state.request);
+        state.response = data;
+        document.getElementById('options-card').style.display = 'block';
+        renderOptions(data);
+        FC.text(runMsg, 'Options ready.', 'ok');
+      } catch (e) {
+        FC.text(runMsg, e.message, 'error');
+      }
+    });
+
+    document.getElementById('search-selected').addEventListener('click', () => {
+      if (!state.response || !state.selectedType) {
+        FC.text(optionsMsg, 'Run recommendation first.', 'error');
+        return;
+      }
+
+      FC.text(optionsMsg, `Using selected type: ${state.selectedType}`, 'ok');
+      searchStores(state.selectedType);
+    });
+
+    document.getElementById('prev-page').addEventListener('click', () => {
+      state.page -= 1;
+      renderStoresPage();
+    });
+
+    document.getElementById('next-page').addEventListener('click', () => {
+      state.page += 1;
+      renderStoresPage();
+    });
+
+    document.getElementById('back-main').addEventListener('click', () => {
+      location.href = '/main.html';
+    });
+
+    document.getElementById('logout').addEventListener('click', () => {
+      FC.clearAuth();
+      location.href = '/index.html';
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FoodieCare - Login</title>
+  <link rel="stylesheet" href="/assets/app.css" />
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <h1>FoodieCare</h1>
+      <p class="sub">Modern API Frontend (Migration Phase 3)</p>
+    </header>
+
+    <div class="grid two">
+      <section class="card">
+        <h2>Login</h2>
+        <div class="row">
+          <div>
+            <label for="login-user">Username</label>
+            <input id="login-user" autocomplete="username" />
+          </div>
+          <div>
+            <label for="login-pass">Password</label>
+            <input id="login-pass" type="password" autocomplete="current-password" />
+          </div>
+        </div>
+        <button id="login-btn">Login</button>
+        <button id="guest-btn" class="secondary">Continue as Guest (Global)</button>
+        <p id="login-msg" class="notice"></p>
+      </section>
+
+      <section class="card">
+        <h2>Register</h2>
+        <div class="row">
+          <div>
+            <label for="reg-user">Username</label>
+            <input id="reg-user" />
+          </div>
+          <div>
+            <label for="reg-pass">Password</label>
+            <input id="reg-pass" type="password" />
+          </div>
+          <div>
+            <label for="reg-gender">Gender</label>
+            <select id="reg-gender">
+              <option value="1">Male(1)</option>
+              <option value="0">Female(0)</option>
+            </select>
+          </div>
+          <div>
+            <label for="reg-age">Age</label>
+            <input id="reg-age" type="number" min="0" max="99" value="20" />
+          </div>
+        </div>
+        <button id="reg-btn">Create Account</button>
+        <p id="reg-msg" class="notice"></p>
+      </section>
+    </div>
+  </div>
+
+  <script src="/assets/app.js"></script>
+  <script>
+    const auth = FC.loadAuth();
+    if (auth && (auth.token || auth.guest === true)) location.href = '/main.html';
+
+    document.getElementById('login-btn').addEventListener('click', async () => {
+      const msg = document.getElementById('login-msg');
+      FC.text(msg, 'Submitting...');
+
+      try {
+        const result = await FC.postJson('/api/auth/login', {
+          username: document.getElementById('login-user').value.trim(),
+          password: document.getElementById('login-pass').value
+        });
+
+        FC.saveAuth(result);
+        FC.text(msg, 'Login success. Redirecting...', 'ok');
+        location.href = '/main.html';
+      } catch (e) {
+        FC.text(msg, e.message, 'error');
+      }
+    });
+
+    document.getElementById('guest-btn').addEventListener('click', () => {
+      FC.saveAuth({
+        token: '',
+        userId: null,
+        username: 'Guest',
+        guest: true
+      });
+      location.href = '/main.html';
+    });
+
+    document.getElementById('reg-btn').addEventListener('click', async () => {
+      const msg = document.getElementById('reg-msg');
+      FC.text(msg, 'Submitting...');
+
+      try {
+        const result = await FC.postJson('/api/auth/register', {
+          username: document.getElementById('reg-user').value.trim(),
+          password: document.getElementById('reg-pass').value,
+          gender: Number(document.getElementById('reg-gender').value),
+          age: Number(document.getElementById('reg-age').value)
+        });
+
+        FC.saveAuth(result);
+        FC.text(msg, 'Register success. Redirecting...', 'ok');
+        location.href = '/main.html';
+      } catch (e) {
+        FC.text(msg, e.message, 'error');
+      }
+    });
+  </script>
+</body>
+</html>
